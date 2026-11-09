@@ -69,10 +69,15 @@ def handle_get_state(params, _body):
         ddb = boto3.resource("dynamodb", region_name=config.get("region", REGION))
         table = ddb.Table(table_name)
         result = []
+        scanned_count = 0
         kwargs: dict = {}
         while True:
             resp = table.scan(**kwargs)
+            scanned_count += len(resp.get("Items", []))
             for item in resp.get("Items", []):
+                # Schedule firing records share the table but belong to no user.
+                if item.get("pk", "").startswith("_schedule#"):
+                    continue
                 raw = item.get("data", "")
                 try:
                     value = json.loads(raw) if isinstance(raw, str) else raw
@@ -88,7 +93,7 @@ def handle_get_state(params, _body):
             if not lek:
                 break
             kwargs["ExclusiveStartKey"] = lek
-            if len(result) >= 2000:  # safety cap to avoid Lambda timeout
+            if scanned_count >= 2000:  # safety cap to avoid Lambda timeout
                 break
         return _json(200, result)
     except Exception:
@@ -99,6 +104,7 @@ def handle_list_all_state(_params, _body):
     """List state entries across all stacks."""
     registries = _get_all_registries()
     all_entries = []
+    scanned_count = 0
     for sid, cfg in registries.items():
         table_name = cfg.get("outputs", {}).get("state_table_name", "")
         if not table_name or not _is_valid_state_table(table_name):
@@ -109,7 +115,10 @@ def handle_list_all_state(_params, _body):
             kwargs: dict = {}
             while True:
                 resp = table.scan(**kwargs)
+                scanned_count += len(resp.get("Items", []))
                 for item in resp.get("Items", []):
+                    if item.get("pk", "").startswith("_schedule#"):
+                        continue
                     raw = item.get("data", "")
                     try:
                         value = json.loads(raw) if isinstance(raw, str) else raw
@@ -123,7 +132,7 @@ def handle_list_all_state(_params, _body):
                         "stack": sid,
                     })
                 lek = resp.get("LastEvaluatedKey")
-                if not lek or len(all_entries) >= 2000:
+                if not lek or scanned_count >= 2000:
                     break
                 kwargs["ExclusiveStartKey"] = lek
         except Exception:

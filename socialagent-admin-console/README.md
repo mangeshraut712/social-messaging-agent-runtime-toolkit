@@ -38,7 +38,7 @@ Conversations, Schedules, State and Phone numbers are also per-stack tabs inside
 - **Status** — per-Lambda health probes, invocation/error metrics, restart Lambda / runtime
 - **Conversations** — paginated (25/page, "Load more"), chat modal with text/template reply, bulk delete
 - **Schedules** — EventBridge schedules scoped to the stack, cancel selected
-- **State** — per-user DynamoDB key-value state, delete keys
+- **State** — per-user DynamoDB key-value state, delete keys. The State page and tab leave out internal `_schedule#` firing records.
 - **Phone Numbers** — EUM Social numbers bound to the stack, change SNS destination
 - **Deploys** — CodeBuild deploy history
 - **Errors** — recent Lambda error log entries (24h)
