@@ -808,8 +808,9 @@ def deployment_metrics_enabled(config: dict[str, Any], tf_dir: Path) -> bool:
     The YAML's ``terraform.enable_deployment_metrics`` decides when it is set,
     since the generated var file outranks the environment. Unset,
     ``TF_VAR_enable_deployment_metrics`` does, and then the variable's own default
-    in ``tf_dir/variables.tf``, read there rather than assumed. A sibling copy of
-    the Terraform that drops the variable creates no marker, so it gets no notice.
+    in whichever ``tf_dir/*.tf`` file declares it, read there rather than assumed.
+    A sibling copy of the Terraform that drops the variable creates no marker, so
+    it gets no notice.
     """
     if DEPLOYMENT_METRICS_VARIABLE not in _tfvars.terraform_variables(tf_dir):
         return False

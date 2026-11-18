@@ -21,8 +21,8 @@ Rules:
 - ``secrets: [a, b]`` becomes ``{"a": {}, "b": {}}`` — names only; values are
   set out of band with ``socialagent secrets set``.
 - ``terraform:`` entries pass through verbatim. A key that is not a variable
-  in ``infra-terraform/variables.tf`` is an error, so a typo fails here
-  instead of being ignored.
+  declared in a ``*.tf`` file of ``infra-terraform/`` is an error, so a typo
+  fails here instead of being ignored.
 """
 
 from __future__ import annotations
@@ -45,25 +45,35 @@ _PATH_FIELDS = {
 _VARIABLE_RE = re.compile(r'^variable\s+"(\w+)"\s*\{(.*?)^\}', re.S | re.M)
 
 
+def _variable_blocks(tf_dir: Path) -> list[tuple[str, str]]:
+    """``(name, body)`` of every ``variable`` block in the ``*.tf`` files of *tf_dir*.
+
+    Terraform loads every ``*.tf`` file of the root module, so a copy of the
+    Terraform may declare a variable outside ``variables.tf``.
+    """
+    blocks: list[tuple[str, str]] = []
+    for path in sorted(tf_dir.glob("*.tf")):
+        blocks.extend(_VARIABLE_RE.findall(path.read_text()))
+    return blocks
+
+
 def terraform_variables(tf_dir: Path) -> dict[str, bool]:
-    """Map each variable in ``tf_dir/variables.tf`` to whether it is required."""
-    text = (tf_dir / "variables.tf").read_text()
+    """Map each variable declared in ``tf_dir/*.tf`` to whether it is required."""
     return {
         name: re.search(r"^\s*default\s*=", body, re.M) is None
-        for name, body in _VARIABLE_RE.findall(text)
+        for name, body in _variable_blocks(tf_dir)
     }
 
 
 def variable_default(tf_dir: Path, name: str) -> str | None:
-    """The ``default = ...`` of *name* in ``tf_dir/variables.tf`` as written.
+    """The ``default = ...`` of *name* in ``tf_dir/*.tf`` as written.
 
     ``None`` when the variable is absent or has no default (so is required).
     Only the text on the ``default`` line is returned, which is the whole value
     for a bool, number or string; a multi-line map or list reads as its opening
     bracket.
     """
-    text = (tf_dir / "variables.tf").read_text()
-    for found, body in _VARIABLE_RE.findall(text):
+    for found, body in _variable_blocks(tf_dir):
         if found == name:
             match = re.search(r"^\s*default\s*=\s*(.+?)\s*$", body, re.M)
             if not match:
@@ -113,7 +123,7 @@ def generate(config: dict[str, Any], project_dir: Path, tf_dir: Path) -> dict[st
             "terraform: "
             + ", ".join(unknown)
             + f" {'is not a variable' if len(unknown) == 1 else 'are not variables'}"
-            f" in {tf_dir / 'variables.tf'}"
+            f" in the *.tf files of {tf_dir}"
         )
     tfvars.update(passthrough)
 

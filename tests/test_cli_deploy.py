@@ -939,6 +939,34 @@ def test_marker_notice_follows_the_default_of_the_terraform_it_deploys(checkout)
     assert _deploy.deployment_metrics_enabled(config, tf) is False
 
 
+def test_a_variable_declared_outside_variables_tf_still_counts(checkout):
+    """Terraform reads every ``*.tf`` file, so a copy that moves the variable
+    into another file still creates the marker: the notice stays on, follows
+    that file's default, and the YAML opt-out is accepted rather than refused."""
+    project, tf = checkout
+    key = _deploy.DEPLOYMENT_METRICS_VARIABLE
+    config = yaml.safe_load((project / "socialagent.dev.yaml").read_text())
+    variables = tf / "variables.tf"
+    text = variables.read_text()
+    block = re.search(
+        r'^variable "enable_deployment_metrics" \{.*?^\}\n', text, re.S | re.M
+    ).group(0)
+    variables.write_text(text.replace(block, ""))
+    moved = tf / "metrics_variables.tf"
+    moved.write_text(block)
+
+    assert key in _tfvars.terraform_variables(tf)
+    assert _tfvars.variable_default(tf, key) == "true"
+    assert _deploy.deployment_metrics_enabled(config, tf) is True
+
+    moved.write_text(re.sub(r"(default\s*=\s*)true", r"\1false", block, count=1))
+    assert _deploy.deployment_metrics_enabled(config, tf) is False
+
+    opt_out = {**config, "terraform": {key: False}}
+    tfvars = _tfvars.generate(opt_out, project, tf)
+    assert tfvars[key] is False
+
+
 def test_a_trailing_comment_on_the_default_does_not_silence_the_notice(checkout):
     """A comment after ``default = true`` must not read as part of the value:
     the failure would turn the disclosure off while the marker is still created."""
@@ -1056,6 +1084,20 @@ def test_every_doc_names_the_real_opt_out_variable():
         assert key in (REPO_ROOT / doc).read_text(), f"{doc} does not name {key}"
     # The CLI's own notice names the same key, so a rename cannot leave it behind.
     assert key in OPT_OUT_KEY
+
+
+def test_getting_started_and_configuration_give_the_opt_out_in_a_pasteable_form():
+    """Getting Started shows the YAML to paste, and the configuration table lists
+    the key under `terraform:` with the default the notice relies on, so an edit
+    cannot leave a different spelling behind."""
+    getting_started = (REPO_ROOT / "docs" / "getting-started.md").read_text()
+    assert (
+        "```yaml\nterraform:\n  enable_deployment_metrics: false\n```"
+        in getting_started
+    )
+    configuration = (REPO_ROOT / "docs" / "configuration.md").read_text()
+    section = configuration.split("### `terraform:`", 1)[1].split("\n### ", 1)[0]
+    assert "\n| `enable_deployment_metrics` | `true` |" in section
 
 
 def test_readme_callout_precedes_the_first_section_and_carries_the_opt_out():
